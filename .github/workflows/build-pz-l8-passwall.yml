@@ -1,1 +1,33 @@
+name: Build ImmortalWrt PZ-L8 (PassWall + xray-core)
 
+# 云端编译沛喆 PZ-L8 定制固件：ImmortalWrt 25.12.0 官方基础 + 预装 PassWall + xray-core
+# 触发方式：GitHub Actions 页面手动 Run workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download ImmortalWrt 25.12.0 ImageBuilder (qualcommax/ipq50xx)
+        run: |
+          curl -fLO https://downloads.immortalwrt.org/releases/25.12.0/targets/qualcommax/ipq50xx/immortalwrt-imagebuilder-25.12.0-qualcommax-ipq50xx.Linux-x86_64.tar.zst
+          tar --zstd -xf immortalwrt-imagebuilder-25.12.0-qualcommax-ipq50xx.Linux-x86_64.tar.zst
+
+      - name: Build image (cmcc_pz-l8) with PassWall + xray-core
+        run: |
+          cd immortalwrt-imagebuilder-25.12.0-qualcommax-ipq50xx
+          make image PROFILE=cmcc_pz-l8             PACKAGES="luci-app-passwall luci-i18n-passwall-zh-cn xray-core                       kmod-nft-tproxy kmod-nft-socket kmod-inet-diag kmod-netlink-diag                       kmod-tun kmod-nft-fullcone                       ath11k-firmware-ipq5018 ath11k-firmware-ipq5018-qcn6122                       luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn"
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pz-l8-passwall-25.12.0
+          path: |
+            immortalwrt-imagebuilder-25.12.0-qualcommax-ipq50xx/bin/targets/qualcommax/ipq50xx/*cmcc_pz-l8*
+          retention-days: 14
