@@ -1,0 +1,77 @@
+name: Build PZ-L8 kmods (nft-tproxy + nft-socket)
+
+# 云端编译沛喆 PZ-L8 缺失的内核模块：kmod-nft-tproxy / kmod-nft-socket
+# 基于官方 OpenWrt 25.12.5 (v25.12.5) 源码，仅编译内核模块 ipk + ko，不重编固件
+# 触发方式：GitHub Actions 页面手动 Run workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison libssl-dev zlib1g-dev \
+            libncurses5-dev file python3 python3-distutils unzip rsync gawk wget \
+            gettext libelf-dev xsltproc bc
+
+      - name: Clone OpenWrt 25.12.5 source
+        run: |
+          git clone --depth 1 --branch v25.12.5 https://github.com/openwrt/openwrt.git
+          cd openwrt
+
+      - name: Enable NFT_TPROXY / NFT_SOCKET in kernel config
+        run: |
+          cd openwrt
+          CFG=target/linux/qualcommax/ipq50xx/config-6.12
+          # 追加缺失的 netfilter 模块配置（幂等：存在则跳过）
+          grep -q '^CONFIG_NFT_TPROXY=m' "$CFG" || echo 'CONFIG_NFT_TPROXY=m' >> "$CFG"
+          grep -q '^CONFIG_NFT_SOCKET=m' "$CFG" || echo 'CONFIG_NFT_SOCKET=m' >> "$CFG"
+          grep -q '^CONFIG_NF_TPROXY_IPV4=m' "$CFG" || echo 'CONFIG_NF_TPROXY_IPV4=m' >> "$CFG"
+          grep -q '^CONFIG_NF_TPROXY_IPV6=m' "$CFG" || echo 'CONFIG_NF_TPROXY_IPV6=m' >> "$CFG"
+          grep -q '^CONFIG_NF_SOCKET_IPV4=m' "$CFG" || echo 'CONFIG_NF_SOCKET_IPV4=m' >> "$CFG"
+          grep -q '^CONFIG_NF_SOCKET_IPV6=m' "$CFG" || echo 'CONFIG_NF_SOCKET_IPV6=m' >> "$CFG"
+          grep -q '^CONFIG_NFT_META=m' "$CFG" || echo 'CONFIG_NFT_META=m' >> "$CFG"
+          grep -q '^CONFIG_NFT_CT=m' "$CFG" || echo 'CONFIG_NFT_CT=m' >> "$CFG"
+          tail -15 "$CFG"
+
+      - name: Configure build (target only, no feeds needed)
+        run: |
+          cd openwrt
+          make defconfig
+          grep -E 'CONFIG_NFT_TPROXY|CONFIG_NFT_SOCKET|CONFIG_NF_TPROXY_IPV|CONFIG_NF_SOCKET_IPV' .config | grep '=m' || true
+
+      - name: Build kernel modules
+        run: |
+          cd openwrt
+          make target/linux/compile V=s
+          make package/kernel/linux/compile V=s
+
+      - name: Collect kmod ipks and ko files
+        run: |
+          cd openwrt
+          mkdir -p /tmp/kmods
+          echo "=== ipk ==="
+          find bin -type f \( -name '*nft-tproxy*' -o -name '*nft-socket*' -o -name '*nf-tproxy*' -o -name '*nf-socket*' \) 2>/dev/null | tee /tmp/kmod-ipk.txt
+          echo "=== ko ==="
+          find build_dir -type f \( -name 'nft_tproxy.ko' -o -name 'nft_socket.ko' -o -name 'nf_tproxy_ipv4.ko' -o -name 'nf_tproxy_ipv6.ko' -o -name 'nf_socket_ipv4.ko' -o -name 'nf_socket_ipv6.ko' \) 2>/dev/null | tee /tmp/kmod-ko.txt
+          # 拷入产物目录
+          while read -r f; do
+            if [ -n "$f" ] && [ -f "$f" ]; then
+              d="/tmp/kmods/$(basename "$f")"
+              cp -v "$f" "$d"
+            fi
+          done < <(cat /tmp/kmod-ipk.txt /tmp/kmod-ko.txt 2>/dev/null | sort -u)
+          # 同时记录模块所属 package（便于对照依赖）
+          ls -la /tmp/kmods/
+
+      - name: Upload kmod artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pz-l8-kmods-25.12.5
+          path: /tmp/kmods
+          retention-days: 14
