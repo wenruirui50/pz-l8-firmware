@@ -39,6 +39,25 @@ jobs:
           grep -q '^CONFIG_NFT_CT=m' "$CFG" || echo 'CONFIG_NFT_CT=m' >> "$CFG"
           tail -15 "$CFG"
 
+      - name: Patch default LAN IP (avoid collision with main router 192.168.10.x)
+        run: |
+          cd openwrt
+          # PZ-L8 固件默认 LAN=192.168.10.1 与主路由撞 IP，埋 uci-defaults 补丁：
+          # 任何基于此源码编出的固件，首次启动自动将 LAN 改为 192.168.11.1/24
+          UD=target/linux/qualcommax/ipq50xx/base-files/etc/uci-defaults
+          mkdir -p "$UD"
+          cat > "$UD/99-pz-l8-lan-ip" <<'EOF'
+#!/bin/sh
+# PZ-L8: 避开主路由 192.168.10.x 网段，防止串IP
+uci set network.lan.ipaddr='192.168.11.1'
+uci set network.lan.netmask='255.255.255.0'
+uci commit network
+exit 0
+EOF
+          chmod +x "$UD/99-pz-l8-lan-ip"
+          echo "=== uci-defaults ==="
+          ls -la "$UD/"
+
       - name: Configure build (target only, no feeds needed)
         run: |
           cd openwrt
