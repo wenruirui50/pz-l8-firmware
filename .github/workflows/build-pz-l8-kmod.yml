@@ -46,14 +46,7 @@ jobs:
           # 任何基于此源码编出的固件，首次启动自动将 LAN 改为 192.168.11.1/24
           UD=target/linux/qualcommax/ipq50xx/base-files/etc/uci-defaults
           mkdir -p "$UD"
-          cat > "$UD/99-pz-l8-lan-ip" <<'EOF'
-#!/bin/sh
-# PZ-L8: 避开主路由 192.168.10.x 网段，防止串IP
-uci set network.lan.ipaddr='192.168.11.1'
-uci set network.lan.netmask='255.255.255.0'
-uci commit network
-exit 0
-EOF
+          printf '%s\n' '#!/bin/sh' '# PZ-L8: 避开主路由 192.168.10.x 网段，防止串IP' "uci set network.lan.ipaddr='192.168.11.1'" "uci set network.lan.netmask='255.255.255.0'" 'uci commit network' 'exit 0' > "$UD/99-pz-l8-lan-ip"
           chmod +x "$UD/99-pz-l8-lan-ip"
           echo "=== uci-defaults ==="
           ls -la "$UD/"
